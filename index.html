@@ -3,9 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>钱包连接按钮 - 完整SDK集成</title>
+    <title>钱包连接按钮 - 带BNB余额显示</title>
     <!-- 引入WalletConnect的CDN -->
     <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.7.8/dist/umd/index.min.js"></script>
+    <!-- 引入Web3.js用于查询余额 -->
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
     <style>
         /* 基础样式 */
         body {
@@ -21,7 +23,11 @@
         /* 主容器 */
         .wallet-container {
             position: relative;
-            width: 300px;
+            width: 320px;
+            background: white;
+            border-radius: 16px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
         }
         
         /* 主按钮样式 */
@@ -40,6 +46,7 @@
             justify-content: center;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
             transition: all 0.3s ease;
+            margin-bottom: 16px;
         }
         
         .wallet-button:hover {
@@ -61,8 +68,8 @@
         .wallet-dropdown {
             position: absolute;
             top: 100%;
-            left: 0;
-            right: 0;
+            left: 20px;
+            right: 20px;
             background: white;
             border-radius: 12px;
             margin-top: 8px;
@@ -138,6 +145,70 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        
+        /* 钱包信息展示区 */
+        .wallet-info {
+            display: none;
+            border-top: 1px solid #eee;
+            padding-top: 16px;
+            margin-top: 16px;
+        }
+        
+        .wallet-info.show {
+            display: block;
+            animation: fadeIn 0.5s ease;
+        }
+        
+        .wallet-address {
+            font-size: 14px;
+            font-family: monospace;
+            background: #f5f5f5;
+            padding: 8px 12px;
+            border-radius: 8px;
+            word-break: break-all;
+            margin-bottom: 12px;
+        }
+        
+        .wallet-balance {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .balance-label {
+            font-weight: bold;
+            color: #666;
+        }
+        
+        .balance-value {
+            font-weight: bold;
+            font-size: 18px;
+            color: #F0B90B;
+        }
+        
+        .network-info {
+            font-size: 12px;
+            color: #666;
+            text-align: right;
+            margin-top: 8px;
+        }
+        
+        /* 复制按钮 */
+        .copy-btn {
+            background: #e0e0e0;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 8px;
+            transition: background 0.2s;
+        }
+        
+        .copy-btn:hover {
+            background: #d0d0d0;
+        }
     </style>
 </head>
 <body>
@@ -164,6 +235,21 @@
                 <span class="name">Binance Chain Wallet</span>
             </div>
         </div>
+        
+        <!-- 钱包信息展示区 -->
+        <div id="walletInfo" class="wallet-info">
+            <div class="wallet-address">
+                <span id="walletAddress"></span>
+                <button class="copy-btn" onclick="copyToClipboard()">复制</button>
+            </div>
+            <div class="wallet-balance">
+                <span class="balance-label">BNB余额:</span>
+                <span class="balance-value" id="bnbBalance">0.00</span>
+            </div>
+            <div class="network-info">
+                网络: <span id="networkName">Binance Smart Chain</span>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -171,11 +257,16 @@
         const walletButton = document.getElementById('walletButton');
         const walletDropdown = document.getElementById('walletDropdown');
         const buttonText = document.getElementById('buttonText');
+        const walletInfo = document.getElementById('walletInfo');
+        const walletAddress = document.getElementById('walletAddress');
+        const bnbBalance = document.getElementById('bnbBalance');
+        const networkName = document.getElementById('networkName');
         
         // 当前连接的钱包和提供者
         let connectedWallet = null;
         let walletProvider = null;
         let walletConnectProvider = null;
+        let web3 = null;
         
         // BNB Smart Chain网络配置
         const BSC_MAINNET = {
@@ -239,14 +330,28 @@
                 }
                 
                 connectedWallet = walletName;
-                buttonText.textContent = walletName;
+                buttonText.textContent = connectedWallet;
                 walletButton.classList.add('connected');
                 
-                console.log(`成功连接到 ${walletName}`);
+                console.log(`成功连接到 ${connectedWallet}`);
+                
+                // 初始化Web3实例
+                web3 = new Web3(walletProvider);
                 
                 // 获取账户地址
-                const accounts = await walletProvider.request({ method: 'eth_accounts' });
-                console.log('当前账户:', accounts[0]);
+                const accounts = await web3.eth.getAccounts();
+                const currentAccount = accounts[0];
+                walletAddress.textContent = currentAccount;
+                
+                // 获取网络信息
+                const chainId = await web3.eth.getChainId();
+                updateNetworkInfo(chainId);
+                
+                // 获取并显示BNB余额
+                await updateBalance(currentAccount);
+                
+                // 显示钱包信息区域
+                walletInfo.classList.add('show');
                 
             } catch (error) {
                 console.error('连接钱包失败:', error);
@@ -334,6 +439,43 @@
             }
         }
         
+        // 更新BNB余额
+        async function updateBalance(account) {
+            if (!web3 || !account) return;
+            
+            try {
+                // 获取余额（单位为wei）
+                const balanceWei = await web3.eth.getBalance(account);
+                // 转换为BNB（1 BNB = 10^18 wei）
+                const balanceBNB = web3.utils.fromWei(balanceWei, 'ether');
+                // 显示两位小数
+                bnbBalance.textContent = parseFloat(balanceBNB).toFixed(4);
+            } catch (error) {
+                console.error('获取余额失败:', error);
+                bnbBalance.textContent = '获取失败';
+            }
+        }
+        
+        // 更新网络信息
+        function updateNetworkInfo(chainId) {
+            switch(chainId) {
+                case 56: // BSC主网
+                    networkName.textContent = 'Binance Smart Chain (主网)';
+                    break;
+                case 97: // BSC测试网
+                    networkName.textContent = 'Binance Smart Chain (测试网)';
+                    break;
+                case 1: // Ethereum主网
+                    networkName.textContent = 'Ethereum (主网)';
+                    break;
+                case 3: // Ropsten测试网
+                    networkName.textContent = 'Ethereum (Ropsten)';
+                    break;
+                default:
+                    networkName.textContent = `未知网络 (ID: ${chainId})`;
+            }
+        }
+        
         // 断开钱包连接
         function disconnectWallet() {
             try {
@@ -344,8 +486,10 @@
                 
                 connectedWallet = null;
                 walletProvider = null;
+                web3 = null;
                 buttonText.textContent = '连接钱包';
                 walletButton.classList.remove('connected');
+                walletInfo.classList.remove('show');
                 
                 console.log('钱包已断开连接');
             } catch (error) {
@@ -365,21 +509,41 @@
             }
         }
         
+        // 复制地址到剪贴板
+        function copyToClipboard() {
+            const address = walletAddress.textContent;
+            if (!address) return;
+            
+            navigator.clipboard.writeText(address).then(() => {
+                alert('地址已复制到剪贴板');
+            }).catch(err => {
+                console.error('复制失败:', err);
+                alert('复制失败，请手动复制');
+            });
+        }
+        
         // 监听账户变化
         function setupEventListeners() {
             if (window.ethereum) {
-                window.ethereum.on('accountsChanged', (accounts) => {
+                window.ethereum.on('accountsChanged', async (accounts) => {
                     if (accounts.length === 0) {
                         // 用户已断开所有账户
                         disconnectWallet();
                     } else {
                         console.log('账户已变更:', accounts[0]);
+                        walletAddress.textContent = accounts[0];
+                        await updateBalance(accounts[0]);
                     }
                 });
                 
                 window.ethereum.on('chainChanged', (chainId) => {
                     console.log('网络已变更:', chainId);
-                    window.location.reload(); // 通常建议刷新页面
+                    // 更新网络信息
+                    updateNetworkInfo(parseInt(chainId, 16));
+                    // 重新获取余额
+                    if (walletAddress.textContent) {
+                        updateBalance(walletAddress.textContent);
+                    }
                 });
                 
                 window.ethereum.on('disconnect', (error) => {
@@ -420,11 +584,37 @@
             const wallet = await checkConnectedWallet();
             if (wallet) {
                 // 如果已经连接，更新UI
-                connectedWallet = wallet;
-                walletProvider = window.ethereum;
-                buttonText.textContent = wallet;
-                walletButton.classList.add('connected');
-                console.log('已检测到连接的钱包:', wallet);
+                try {
+                    setLoading(true);
+                    connectedWallet = wallet;
+                    walletProvider = window.ethereum;
+                    buttonText.textContent = wallet;
+                    walletButton.classList.add('connected');
+                    
+                    // 初始化Web3实例
+                    web3 = new Web3(walletProvider);
+                    
+                    // 获取账户地址
+                    const accounts = await web3.eth.getAccounts();
+                    const currentAccount = accounts[0];
+                    walletAddress.textContent = currentAccount;
+                    
+                    // 获取网络信息
+                    const chainId = await web3.eth.getChainId();
+                    updateNetworkInfo(chainId);
+                    
+                    // 获取并显示BNB余额
+                    await updateBalance(currentAccount);
+                    
+                    // 显示钱包信息区域
+                    walletInfo.classList.add('show');
+                    
+                    console.log('已检测到连接的钱包:', wallet);
+                } catch (error) {
+                    console.error('初始化连接状态失败:', error);
+                } finally {
+                    setLoading(false);
+                }
             }
         });
     </script>
