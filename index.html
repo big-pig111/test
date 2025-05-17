@@ -531,36 +531,7 @@
                 }
             }
         });
-           async function connectWalletConnect() {
-    try {
-        // 清除旧缓存
-        localStorage.removeItem('@walletconnect/connection@2.0.0-rc.1');
 
-        walletConnectProvider = new WalletConnectProvider.default({
-            rpc: {
-                56: "https://bsc-dataseed.binance.org/",
-                97: "https://data-seed-prebsc-1-s1.binance.org:8545/"
-            },
-            chainId: 56, // 强制主网
-            qrcodeModalOptions: {
-                mobileLinks: ["metamask", "trust", "binance"],
-                desktopLinks: ["metamask", "trust", "binance"]
-            }
-        });
-
-        // 强制设置英文
-        await walletConnectProvider.wc.updateSession({
-            ...walletConnectProvider.wc.session,
-            locale: 'en'
-        });
-
-        await walletConnectProvider.enable();
-        walletProvider = walletConnectProvider;
-    } catch (error) {
-        console.error('WalletConnect Error:', error);
-        throw new Error('WalletConnect connection failed');
-    }
-}
     </script>
  
 </body>
