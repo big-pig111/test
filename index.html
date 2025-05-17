@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet Connection Button</title>
+    <!-- WalletConnect CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.7.8/dist/umd/index.min.js"></script>
+    <!-- Web3.js for balance queries -->
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
+    <style>
+        /* Base styles */
+        body {
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        
+        /* Top-right wallet container */
+        .wallet-corner {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        /* Balance display */
+        .balance-display {
+            background: white;
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            font-weight: bold;
+            display: none; /* Hidden by default, shows after connection */
+        }
+        
+        .balance-amount {
+            color: #F0B90B;
+        }
+        
+        /* Main button style */
+        .wallet-button {
+            background-color: #F0B90B; /* Binance yellow */
+            color: #000;
+            border: none;
+            border-radius: 12px;
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: bold;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+            min-width: 120px;
+        }
+        
+        .wallet-button:hover {
+            background-color: #e9b10a;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .wallet-button:active {
+            transform: translateY(0);
+        }
+        
+        .wallet-button .icon {
+            margin-right: 8px;
+            font-size: 16px;
+        }
+        
+        /* Wallet dropdown menu */
+        .wallet-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            margin-top: 8px;
+            padding: 10px 0;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            display: none;
+            overflow: hidden;
+            width: 200px;
+        }
+        
+        .wallet-dropdown.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Individual wallet options */
+        .wallet-option {
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .wallet-option:hover {
+            background: #f8f8f8;
+        }
+        
+        .wallet-option .icon {
+            margin-right: 12px;
+            font-size: 18px;
+        }
+        
+        .wallet-option .name {
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        /* Connected state */
+        .connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .connected:hover {
+            background-color: #45a049;
+        }
+        
+        /* Loading state */
+        .loading {
+            position: relative;
+            pointer-events: none;
+        }
+        
+        .loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            margin: -8px 0 0 -8px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Address abbreviation style */
+        .wallet-address {
+            font-family: monospace;
+            font-size: 12px;
+            margin-top: 4px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <!-- Top-right wallet section -->
+    <div class="wallet-corner">
+        <div id="balanceDisplay" class="balance-display">
+            <span>BNB: </span>
+            <span class="balance-amount" id="bnbBalance">0.00</span>
+            <div id="walletAddress" class="wallet-address"></div>
+        </div>
+        
+        <div style="position: relative;">
+            <button id="walletButton" class="wallet-button">
+                <span class="icon">🔗</span>
+                <span id="buttonText">Connect Wallet</span>
+            </button>
+            <div id="walletDropdown" class="wallet-dropdown">
+                <div class="wallet-option" onclick="connectWallet('MetaMask')">
+                    <span class="icon">🦊</span>
+                    <span class="name">MetaMask</span>
+                </div>
+                <div class="wallet-option" onclick="connectWallet('Trust Wallet')">
+                    <span class="icon">🔒</span>
+                    <span class="name">Trust Wallet</span>
+                </div>
+                <div class="wallet-option" onclick="connectWallet('WalletConnect')">
+                    <span class="icon">🔗</span>
+                    <span class="name">WalletConnect</span>
+                </div>
+                <div class="wallet-option" onclick="connectWallet('Binance Chain Wallet')">
+                    <span class="icon">💰</span>
+                    <span class="name">Binance Chain</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Page content can go here -->
+    <div style="padding: 20px; margin-top: 80px;">
+        <h1>Your DApp Content</h1>
+        <p>This is your application's main content area.</p>
+    </div>
+
+    <script>
+        // DOM elements
+        const walletButton = document.getElementById('walletButton');
+        const walletDropdown = document.getElementById('walletDropdown');
+        const buttonText = document.getElementById('buttonText');
+        const balanceDisplay = document.getElementById('balanceDisplay');
+        const bnbBalance = document.getElementById('bnbBalance');
+        const walletAddress = document.getElementById('walletAddress');
+        
+        // Current connected wallet and provider
+        let connectedWallet = null;
+        let walletProvider = null;
+        let walletConnectProvider = null;
+        let web3 = null;
+        
+        // BNB Smart Chain network configuration
+        const BSC_MAINNET = {
+            chainId: '0x38',
+            chainName: 'Binance Smart Chain',
+            nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+            },
+            rpcUrls: ['https://bsc-dataseed.binance.org/'],
+            blockExplorerUrls: ['https://bscscan.com']
+        };
+        
+        // Toggle wallet selection menu
+        walletButton.addEventListener('click', function(e) {
+            if (connectedWallet) {
+                disconnectWallet();
+            } else {
+                walletDropdown.classList.toggle('show');
+                e.stopPropagation(); // Prevent immediate document click event
+            }
+        });
+        
+        // Close menu when clicking elsewhere
+        document.addEventListener('click', function() {
+            walletDropdown.classList.remove('show');
+        });
+        
+        // Connect wallet function
+        async function connectWallet(walletName) {
+            try {
+                setLoading(true);
+                walletDropdown.classList.remove('show');
+                
+                switch(walletName) {
+                    case 'MetaMask':
+                    case 'Trust Wallet':
+                        await connectMetaMask();
+                        break;
+                    case 'WalletConnect':
+                        await connectWalletConnect();
+                        break;
+                    case 'Binance Chain Wallet':
+                        await connectBinanceWallet();
+                        break;
+                    default:
+                        throw new Error('Unsupported wallet type');
+                }
+                
+                connectedWallet = walletName;
+                buttonText.textContent = abbreviateWalletName(connectedWallet);
+                walletButton.classList.add('connected');
+                
+                console.log(`Successfully connected to ${connectedWallet}`);
+                
+                // Initialize Web3 instance
+                web3 = new Web3(walletProvider);
+                
+                // Get account address
+                const accounts = await web3.eth.getAccounts();
+                const currentAccount = accounts[0];
+                
+                // Display abbreviated address (0x123...4567)
+                walletAddress.textContent = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
+                
+                // Get and display BNB balance
+                await updateBalance(currentAccount);
+                
+                // Show balance display
+                balanceDisplay.style.display = 'flex';
+                
+            } catch (error) {
+                console.error('Wallet connection failed:', error);
+                alert(`Connection failed: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        // Abbreviate wallet name
+        function abbreviateWalletName(name) {
+            if (name === 'Binance Chain Wallet') return 'Binance';
+            if (name.length > 10) return name.substring(0, 8) + '...';
+            return name;
+        }
+        
+        // Connect MetaMask or Trust Wallet
+        async function connectMetaMask() {
+            if (!window.ethereum) {
+                throw new Error('Please install MetaMask or Trust Wallet extension');
+            }
+            
+            walletProvider = window.ethereum;
+            
+            // Request account access
+            await walletProvider.request({ method: 'eth_requestAccounts' });
+            
+            // Check if already on BSC network, switch if not
+            await switchToBSCNetwork();
+        }
+        
+        // Connect WalletConnect
+        async function connectWalletConnect() {
+            // Initialize WalletConnect provider
+            walletConnectProvider = new WalletConnectProvider.default({
+                rpc: {
+                    56: "https://bsc-dataseed.binance.org/", // BSC mainnet
+                    97: "https://data-seed-prebsc-1-s1.binance.org:8545/" // BSC testnet
+                }
+            });
+            
+            // Enable session
+            await walletConnectProvider.enable();
+            
+            walletProvider = walletConnectProvider;
+        }
+        
+        // Connect Binance Chain Wallet
+        async function connectBinanceWallet() {
+            if (!window.BinanceChain) {
+                throw new Error('Please install Binance Chain Wallet extension');
+            }
+            
+            walletProvider = window.BinanceChain;
+            
+            // Request account access
+            await walletProvider.request({ method: 'eth_requestAccounts' });
+            
+            // Binance Chain Wallet defaults to BSC network
+        }
+        
+        // Switch to BNB Smart Chain network
+        async function switchToBSCNetwork() {
+            if (!walletProvider) return;
+            
+            try {
+                // First get current chain ID
+                const currentChainId = await walletProvider.request({ method: 'eth_chainId' });
+                
+                if (currentChainId !== BSC_MAINNET.chainId) {
+                    try {
+                        // Try to switch to BSC mainnet
+                        await walletProvider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: BSC_MAINNET.chainId }]
+                        });
+                    } catch (switchError) {
+                        // If network not added, add it
+                        if (switchError.code === 4902) {
+                            await walletProvider.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [BSC_MAINNET]
+                            });
+                        } else {
+                            throw switchError;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Network switch failed:', error);
+                throw new Error('Failed to switch to BNB Smart Chain network');
+            }
+        }
+        
+        // Update BNB balance
+        async function updateBalance(account) {
+            if (!web3 || !account) return;
+            
+            try {
+                // Get balance in wei
+                const balanceWei = await web3.eth.getBalance(account);
+                // Convert to BNB (1 BNB = 10^18 wei)
+                const balanceBNB = web3.utils.fromWei(balanceWei, 'ether');
+                // Display with 4 decimal places
+                bnbBalance.textContent = parseFloat(balanceBNB).toFixed(4);
+            } catch (error) {
+                console.error('Failed to get balance:', error);
+                bnbBalance.textContent = '--';
+            }
+        }
+        
+        // Disconnect wallet
+        function disconnectWallet() {
+            try {
+                if (walletConnectProvider) {
+                    walletConnectProvider.disconnect();
+                    walletConnectProvider = null;
+                }
+                
+                connectedWallet = null;
+                walletProvider = null;
+                web3 = null;
+                buttonText.textContent = 'Connect Wallet';
+                walletButton.classList.remove('connected');
+                balanceDisplay.style.display = 'none';
+                
+                console.log('Wallet disconnected');
+            } catch (error) {
+                console.error('Disconnect failed:', error);
+            }
+        }
+        
+        // Set loading state
+        function setLoading(isLoading) {
+            if (isLoading) {
+                walletButton.classList.add('loading');
+                buttonText.textContent = 'Connecting...';
+                walletButton.disabled = true;
+            } else {
+                walletButton.classList.remove('loading');
+                walletButton.disabled = false;
+            }
+        }
+        
+        // Set up event listeners
+        function setupEventListeners() {
+            if (window.ethereum) {
+                window.ethereum.on('accountsChanged', async (accounts) => {
+                    if (accounts.length === 0) {
+                        // User disconnected all accounts
+                        disconnectWallet();
+                    } else {
+                        console.log('Account changed:', accounts[0]);
+                        // Update displayed address
+                        walletAddress.textContent = `${accounts[0].substring(0, 6)}...${accounts[0].substring(38)}`;
+                        // Update balance
+                        await updateBalance(accounts[0]);
+                    }
+                });
+                
+                window.ethereum.on('chainChanged', (chainId) => {
+                    console.log('Network changed:', chainId);
+                    // Refresh balance
+                    if (walletAddress.textContent) {
+                        const fullAddress = walletAddress.textContent.split('...')[0] + 
+                                          walletAddress.textContent.split('...')[1];
+                        updateBalance(fullAddress);
+                    }
+                });
+                
+                window.ethereum.on('disconnect', (error) => {
+                    console.log('Wallet disconnected:', error);
+                    disconnectWallet();
+                });
+            }
+        }
+        
+        // Check if wallet is already connected
+        async function checkConnectedWallet() {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (accounts.length > 0) {
+                        // Detect if MetaMask
+                        if (window.ethereum.isMetaMask) {
+                            return 'MetaMask';
+                        }
+                        // Detect if Binance Chain Wallet
+                        if (window.BinanceChain && window.BinanceChain === window.ethereum) {
+                            return 'Binance Chain Wallet';
+                        }
+                        // Other injected wallets
+                        return 'Injected Wallet';
+                    }
+                } catch (error) {
+                    console.error('Connection check failed:', error);
+                }
+            }
+            return null;
+        }
+        
+        // Check wallet connection status on page load
+        window.addEventListener('load', async function() {
+            setupEventListeners();
+            
+            const wallet = await checkConnectedWallet();
+            if (wallet) {
+                // If already connected, update UI
+                try {
+                    setLoading(true);
+                    connectedWallet = wallet;
+                    walletProvider = window.ethereum;
+                    buttonText.textContent = abbreviateWalletName(wallet);
+                    walletButton.classList.add('connected');
+                    
+                    // Initialize Web3 instance
+                    web3 = new Web3(walletProvider);
+                    
+                    // Get account address
+                    const accounts = await web3.eth.getAccounts();
+                    const currentAccount = accounts[0];
+                    
+                    // Display abbreviated address
+                    walletAddress.textContent = `${currentAccount.substring(0, 6)}...${currentAccount.substring(38)}`;
+                    
+                    // Get and display BNB balance
+                    await updateBalance(currentAccount);
+                    
+                    // Show balance display
+                    balanceDisplay.style.display = 'flex';
+                    
+                    console.log('Detected connected wallet:', wallet);
+                } catch (error) {
+                    console.error('Initialization failed:', error);
+                } finally {
+                    setLoading(false);
+                }
+            }
+        });
+    </script>
+</body>
+</html>
