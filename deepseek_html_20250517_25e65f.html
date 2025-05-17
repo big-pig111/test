@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>钱包连接按钮 - 完整SDK集成</title>
+    <!-- 引入WalletConnect的CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@walletconnect/web3-provider@1.7.8/dist/umd/index.min.js"></script>
+    <style>
+        /* 基础样式 */
+        body {
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        
+        /* 主容器 */
+        .wallet-container {
+            position: relative;
+            width: 300px;
+        }
+        
+        /* 主按钮样式 */
+        .wallet-button {
+            background-color: #F0B90B; /* 币安黄色 */
+            color: #000;
+            border: none;
+            border-radius: 12px;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .wallet-button:hover {
+            background-color: #e9b10a;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+        
+        .wallet-button:active {
+            transform: translateY(0);
+        }
+        
+        .wallet-button .icon {
+            margin-right: 8px;
+            font-size: 18px;
+        }
+        
+        /* 钱包选择下拉菜单 */
+        .wallet-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 12px;
+            margin-top: 8px;
+            padding: 10px 0;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+            z-index: 100;
+            display: none;
+            overflow: hidden;
+        }
+        
+        .wallet-dropdown.show {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* 单个钱包选项 */
+        .wallet-option {
+            padding: 12px 20px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .wallet-option:hover {
+            background: #f8f8f8;
+        }
+        
+        .wallet-option .icon {
+            margin-right: 12px;
+            font-size: 20px;
+        }
+        
+        .wallet-option .name {
+            font-weight: 500;
+        }
+        
+        /* 已连接状态 */
+        .connected {
+            background-color: #4CAF50;
+            color: white;
+        }
+        
+        .connected:hover {
+            background-color: #45a049;
+        }
+        
+        /* 加载状态 */
+        .loading {
+            position: relative;
+            pointer-events: none;
+        }
+        
+        .loading::after {
+            content: "";
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 16px;
+            height: 16px;
+            margin: -8px 0 0 -8px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s ease-in-out infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="wallet-container">
+        <button id="walletButton" class="wallet-button">
+            <span class="icon">🔗</span>
+            <span id="buttonText">连接钱包</span>
+        </button>
+        <div id="walletDropdown" class="wallet-dropdown">
+            <div class="wallet-option" onclick="connectWallet('MetaMask')">
+                <span class="icon">🦊</span>
+                <span class="name">MetaMask</span>
+            </div>
+            <div class="wallet-option" onclick="connectWallet('Trust Wallet')">
+                <span class="icon">🔒</span>
+                <span class="name">Trust Wallet</span>
+            </div>
+            <div class="wallet-option" onclick="connectWallet('WalletConnect')">
+                <span class="icon">🔗</span>
+                <span class="name">WalletConnect</span>
+            </div>
+            <div class="wallet-option" onclick="connectWallet('Binance Chain Wallet')">
+                <span class="icon">💰</span>
+                <span class="name">Binance Chain Wallet</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM元素
+        const walletButton = document.getElementById('walletButton');
+        const walletDropdown = document.getElementById('walletDropdown');
+        const buttonText = document.getElementById('buttonText');
+        
+        // 当前连接的钱包和提供者
+        let connectedWallet = null;
+        let walletProvider = null;
+        let walletConnectProvider = null;
+        
+        // BNB Smart Chain网络配置
+        const BSC_MAINNET = {
+            chainId: '0x38',
+            chainName: 'Binance Smart Chain',
+            nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+            },
+            rpcUrls: ['https://bsc-dataseed.binance.org/'],
+            blockExplorerUrls: ['https://bscscan.com']
+        };
+        
+        const BSC_TESTNET = {
+            chainId: '0x61',
+            chainName: 'Binance Smart Chain Testnet',
+            nativeCurrency: {
+                name: 'BNB',
+                symbol: 'BNB',
+                decimals: 18
+            },
+            rpcUrls: ['https://data-seed-prebsc-1-s1.binance.org:8545/'],
+            blockExplorerUrls: ['https://testnet.bscscan.com']
+        };
+        
+        // 切换钱包选择菜单显示
+        walletButton.addEventListener('click', function(e) {
+            if (connectedWallet) {
+                disconnectWallet();
+            } else {
+                walletDropdown.classList.toggle('show');
+                e.stopPropagation(); // 防止立即触发下面的document点击事件
+            }
+        });
+        
+        // 点击页面其他地方关闭菜单
+        document.addEventListener('click', function() {
+            walletDropdown.classList.remove('show');
+        });
+        
+        // 连接钱包函数
+        async function connectWallet(walletName) {
+            try {
+                setLoading(true);
+                walletDropdown.classList.remove('show');
+                
+                switch(walletName) {
+                    case 'MetaMask':
+                    case 'Trust Wallet':
+                        await connectMetaMask();
+                        break;
+                    case 'WalletConnect':
+                        await connectWalletConnect();
+                        break;
+                    case 'Binance Chain Wallet':
+                        await connectBinanceWallet();
+                        break;
+                    default:
+                        throw new Error('不支持的钱包类型');
+                }
+                
+                connectedWallet = walletName;
+                buttonText.textContent = walletName;
+                walletButton.classList.add('connected');
+                
+                console.log(`成功连接到 ${walletName}`);
+                
+                // 获取账户地址
+                const accounts = await walletProvider.request({ method: 'eth_accounts' });
+                console.log('当前账户:', accounts[0]);
+                
+            } catch (error) {
+                console.error('连接钱包失败:', error);
+                alert(`连接失败: ${error.message}`);
+            } finally {
+                setLoading(false);
+            }
+        }
+        
+        // 连接MetaMask或Trust Wallet
+        async function connectMetaMask() {
+            if (!window.ethereum) {
+                throw new Error('请安装MetaMask或Trust Wallet扩展');
+            }
+            
+            walletProvider = window.ethereum;
+            
+            // 请求账户访问权限
+            await walletProvider.request({ method: 'eth_requestAccounts' });
+            
+            // 检查是否已经是BSC网络，如果不是则切换
+            await switchToBSCNetwork();
+        }
+        
+        // 连接WalletConnect
+        async function connectWalletConnect() {
+            // 初始化WalletConnect提供者
+            walletConnectProvider = new WalletConnectProvider.default({
+                rpc: {
+                    56: "https://bsc-dataseed.binance.org/", // BSC主网
+                    97: "https://data-seed-prebsc-1-s1.binance.org:8545/" // BSC测试网
+                }
+            });
+            
+            // 启用会话
+            await walletConnectProvider.enable();
+            
+            walletProvider = walletConnectProvider;
+        }
+        
+        // 连接Binance Chain Wallet
+        async function connectBinanceWallet() {
+            if (!window.BinanceChain) {
+                throw new Error('请安装Binance Chain Wallet扩展');
+            }
+            
+            walletProvider = window.BinanceChain;
+            
+            // 请求账户访问权限
+            await walletProvider.request({ method: 'eth_requestAccounts' });
+            
+            // Binance Chain Wallet默认使用BSC网络，无需切换
+        }
+        
+        // 切换到BNB Smart Chain网络
+        async function switchToBSCNetwork() {
+            if (!walletProvider) return;
+            
+            try {
+                // 首先获取当前链ID
+                const currentChainId = await walletProvider.request({ method: 'eth_chainId' });
+                
+                if (currentChainId !== BSC_MAINNET.chainId) {
+                    try {
+                        // 尝试切换到BSC主网
+                        await walletProvider.request({
+                            method: 'wallet_switchEthereumChain',
+                            params: [{ chainId: BSC_MAINNET.chainId }]
+                        });
+                    } catch (switchError) {
+                        // 如果网络未添加，则添加它
+                        if (switchError.code === 4902) {
+                            await walletProvider.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [BSC_MAINNET]
+                            });
+                        } else {
+                            throw switchError;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('切换网络失败:', error);
+                throw new Error('无法切换到BNB Smart Chain网络');
+            }
+        }
+        
+        // 断开钱包连接
+        function disconnectWallet() {
+            try {
+                if (walletConnectProvider) {
+                    walletConnectProvider.disconnect();
+                    walletConnectProvider = null;
+                }
+                
+                connectedWallet = null;
+                walletProvider = null;
+                buttonText.textContent = '连接钱包';
+                walletButton.classList.remove('connected');
+                
+                console.log('钱包已断开连接');
+            } catch (error) {
+                console.error('断开连接失败:', error);
+            }
+        }
+        
+        // 设置加载状态
+        function setLoading(isLoading) {
+            if (isLoading) {
+                walletButton.classList.add('loading');
+                buttonText.textContent = '连接中...';
+                walletButton.disabled = true;
+            } else {
+                walletButton.classList.remove('loading');
+                walletButton.disabled = false;
+            }
+        }
+        
+        // 监听账户变化
+        function setupEventListeners() {
+            if (window.ethereum) {
+                window.ethereum.on('accountsChanged', (accounts) => {
+                    if (accounts.length === 0) {
+                        // 用户已断开所有账户
+                        disconnectWallet();
+                    } else {
+                        console.log('账户已变更:', accounts[0]);
+                    }
+                });
+                
+                window.ethereum.on('chainChanged', (chainId) => {
+                    console.log('网络已变更:', chainId);
+                    window.location.reload(); // 通常建议刷新页面
+                });
+                
+                window.ethereum.on('disconnect', (error) => {
+                    console.log('钱包已断开:', error);
+                    disconnectWallet();
+                });
+            }
+        }
+        
+        // 检查是否已经连接了钱包
+        async function checkConnectedWallet() {
+            if (window.ethereum) {
+                try {
+                    const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                    if (accounts.length > 0) {
+                        // 检测是否是MetaMask
+                        if (window.ethereum.isMetaMask) {
+                            return 'MetaMask';
+                        }
+                        // 检测是否是Binance Chain Wallet
+                        if (window.BinanceChain && window.BinanceChain === window.ethereum) {
+                            return 'Binance Chain Wallet';
+                        }
+                        // 其他注入的钱包
+                        return 'Injected Wallet';
+                    }
+                } catch (error) {
+                    console.error('检查连接状态失败:', error);
+                }
+            }
+            return null;
+        }
+        
+        // 页面加载时检查钱包连接状态
+        window.addEventListener('load', async function() {
+            setupEventListeners();
+            
+            const wallet = await checkConnectedWallet();
+            if (wallet) {
+                // 如果已经连接，更新UI
+                connectedWallet = wallet;
+                walletProvider = window.ethereum;
+                buttonText.textContent = wallet;
+                walletButton.classList.add('connected');
+                console.log('已检测到连接的钱包:', wallet);
+            }
+        });
+    </script>
+</body>
+</html>
